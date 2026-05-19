@@ -1,168 +1,148 @@
-# 📱 FIAP — React Native (Expo)
+# CP3 — Geolocalização GPS
 
-## Aula: Login + Navegação
+## O que foi feito
 
-Este projeto foi desenvolvido em aula com o objetivo de ensinar os conceitos fundamentais de **React Native com Expo**, focando em:
-
-* Criação de projeto
-* Organização de pastas
-* Construção de telas
-* Navegação entre telas
-* Componentização básica
+Adicionada captura de GPS ao fluxo de escaneamento de código de barras. Quando o usuário escaneia um produto, a localização atual é capturada automaticamente e salva junto com os dados do produto no Firebase.
 
 ---
 
-# 🎯 Objetivo
+## Configuração necessária antes de rodar
 
-Construir uma aplicação simples contendo:
+O projeto usa variáveis de ambiente para as credenciais do Firebase. **Sem isso o app não conecta.**
 
-* Tela de Login
-* Tela de Cadastro
-* Tela de Recuperação de Senha
-* Tela Home
-* Navegação entre telas (Stack)
+1. Copie o arquivo de exemplo:
+```bash
+cp .env.example .env
+```
 
-> ⚠️ Este projeto NÃO possui backend.
-> O foco é **layout + navegação**.
+2. Abra o `.env` e preencha com os valores do seu projeto no [Firebase Console](https://console.firebase.google.com):
+```env
+EXPO_PUBLIC_FIREBASE_API_KEY=SUA_API_KEY
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=SEU_AUTH_DOMAIN
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=SEU_PROJECT_ID
+EXPO_PUBLIC_FIREBASE_DATABASE_URL=SUA_DATABASE_URL
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=SEU_STORAGE_BUCKET
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=SEU_MESSAGING_SENDER_ID
+EXPO_PUBLIC_FIREBASE_APP_ID=SEU_APP_ID
+```
+
+> O prefixo `EXPO_PUBLIC_` é obrigatório para o Expo expor a variável no bundle do app.
+> O arquivo `.env` está no `.gitignore` — nunca suba suas chaves no repositório.
 
 ---
 
-# 🧱 Tecnologias utilizadas
+## Arquivos alterados
 
-* React Native
-* Expo (SDK 54)
-* React Navigation
-
----
-
-# 🚀 Como executar o projeto
-
-## 1. Clonar o repositório
+### `package.json` + `package-lock.json`
+Instalação do pacote `expo-location` (compatível com Expo Go / SDK 54).
 
 ```bash
-https://github.com/LuizCamilo-Mobile/FIAP-Project-Mobile-Example.git
-```
-
-## 2. Acessar a pasta
-
-```bash
-cd fiap-auth-app
-```
-
-## 3. Instalar dependências
-
-```bash
-npm install
-```
-
-## 4. Rodar o projeto
-
-```bash
-npx expo start
+npx expo install expo-location
 ```
 
 ---
 
-# 📦 Instalação manual (caso necessário)
+### `src/screens/BarcodeScannerScreen.js`
 
-Se precisar recriar o projeto do zero:
+Após ler o código de barras, a função `handleBarcodeScanned` agora:
 
-```bash
-npx create-expo-app fiap-auth-app --template blank@54
-```
+1. Solicita permissão de localização em foreground
+2. Captura latitude e longitude do dispositivo
+3. Passa `scannedLocation` junto com o barcode na navegação para a HomeScreen
 
-Instalar navegação:
+```js
+import * as Location from "expo-location";
 
-```bash
-npm install @react-navigation/native
-npm install @react-navigation/native-stack
-npm install react-native-screens@4.16.0 --save-exact
-npx expo install react-native-safe-area-context
-```
+async function handleBarcodeScanned({ data }) {
+  const { status } = await Location.requestForegroundPermissionsAsync();
 
----
+  let location = null;
+  if (status === "granted") {
+    const currentLocation = await Location.getCurrentPositionAsync({});
+    location = {
+      latitude: currentLocation.coords.latitude,
+      longitude: currentLocation.coords.longitude,
+    };
+  }
 
-# 📁 Estrutura do projeto
-
-```text
-src/
-  components/
-  navigation/
-    AppNavigator.js
-  screens/
-    LoginScreen.js
-    RegisterScreen.js
-    ForgotPasswordScreen.js
-    HomeScreen.js
-```
-
----
-
-# 🧭 Fluxo de navegação
-
-* Login → Home
-* Login → Cadastro
-* Login → Esqueci minha senha
-* Cadastro → Voltar
-* Esqueci senha → Voltar
-* Home → Login
-
----
-
-# 📸 Telas do app
-
-* Login
-* Cadastro
-* Recuperação de senha
-* Home
-
----
-
-# 🧠 Conceitos abordados
-
-* `View`, `Text`, `TextInput`, `Button`
-* `TouchableOpacity`
-* `StyleSheet`
-* Navegação com Stack
-* Props e navegação (`navigation.navigate`)
-* Organização de projeto
-* Componentização básica
-
----
-
-# 🛠️ Problemas comuns
-
-## Erro: "expected dynamic type 'boolean', but had type 'string'"
-
-Solução aplicada:
-
-* Fixar versão:
-
-```bash
-npm install react-native-screens@4.16.0 --save-exact
+  navigation.navigate("Home", {
+    scannedBarcode: data,
+    scannedLocation: location,   // <-- novo
+    ...
+  });
+}
 ```
 
 ---
 
-# 🎯 Próximos passos
+### `src/screens/HomeScreen.js`
 
-* Melhorar layout (UI/UX)
-* Criar componentes reutilizáveis
-* Adicionar validação de formulário
-* Integrar com Firebase (login real)
-* Persistência de usuário
+**Estado adicionado:**
+```js
+const [location, setLocation] = useState(null);
+```
+
+**Recebe a localização vinda do scanner:**
+```js
+useEffect(() => {
+  if (route.params?.scannedBarcode) {
+    setBarcode(String(route.params.scannedBarcode));
+    setLocation(route.params.scannedLocation || null); // <-- novo
+  }
+}, [route.params?.scannedBarcode]);
+```
+
+**Salva no Firebase com o campo `location`:**
+```js
+const productData = {
+  name: name.trim(),
+  price: price.trim(),
+  barcode: barcode ? String(barcode).trim() : "",
+  ...(location && { location }),  // <-- novo (só inclui se existir)
+};
+```
+
+**Exibe as coordenadas no card do produto:**
+```jsx
+{item.location ? (
+  <Text>Localização: {item.location.latitude.toFixed(6)}, {item.location.longitude.toFixed(6)}</Text>
+) : (
+  <Text>Localização: Não informada</Text>
+)}
+```
 
 ---
 
-# 🗣️ Observação final
+## Estrutura salva no Firebase
 
-Este projeto tem fins educacionais e foi construído passo a passo em aula para facilitar o aprendizado dos alunos.
+```json
+{
+  "name": "Nome do Produto",
+  "price": "R$ 10,00",
+  "barcode": "7891234567890",
+  "location": {
+    "latitude": -23.55052,
+    "longitude": -46.633308
+  }
+}
+```
 
 ---
 
-# 👨‍🏫 Autor
+## Fluxo completo
 
-Projeto utilizado em aula — FIAP
-Professor: Luiz Camilo
-
----
+```
+Usuário aponta câmera
+      ↓
+Código de barras lido
+      ↓
+Permissão de GPS solicitada
+      ↓
+Latitude + Longitude capturadas
+      ↓
+Navega para HomeScreen com barcode + location
+      ↓
+Usuário preenche nome e preço
+      ↓
+Produto salvo no Firebase com campo location
+```
